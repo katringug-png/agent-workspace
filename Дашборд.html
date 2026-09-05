@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Мои агенты</title>
+<!--
+  ОБЩИЙ ДАШБОРД ОКРУЖЕНИЯ. Лежит в корне папки «Агенты», открывается двойным кликом.
+
+  ПРАВИЛО ДЛЯ АГЕНТОВ. Закончил работу:
+    1) допиши строку В НАЧАЛО массива ЖУРНАЛ;
+    2) обнови свою строку в АГЕНТЫ — запусков, последний, состояние;
+    3) если после тебя что-то осталось за хозяином (пароль, токен, ручная загрузка) —
+       добавь это в ЗАДАЧИ со состоянием "ждёт меня".
+  Больше в файле ничего не меняй — остальное рисуется само.
+-->
+<script>
+/* ─────────── 1. АГЕНТЫ — кто у меня работает ───────────
+   состояние: "свободен" | "работает" | "ждёт" | "собирается"
+   ход: ссылка на табло сборки, если оно есть (необязательно)
+   прогресс: 0…100, показывать полоску сборки (необязательно)              */
+const АГЕНТЫ = [
+  // Пусто: агенты добавляют себя сюда сами, когда их собирают.
+  // Пример строки, если захочешь вписать вручную:
+  // {имя:"Монтажёр", умеет:"собирает уроки из записи и слайдов", зовут:"смонтируй урок 3",
+  //  создан:"2026-01-10", запусков:0, последний:"—", состояние:"свободен",
+  //  ход:"проекты/Монтажёр/Ход сборки.html"}
+];
+
+/* ─────────── 2. ЗАДАЧИ — что нужно сделать ───────────
+   состояние: "ждёт меня" (без хозяина не двинется)
+              "в работе"  (агент делает прямо сейчас)
+              "надо"      (в очереди, никто не начинал)
+              "готово"    (закрыто)
+   кто: чей это шаг — имя агента или "я"
+   зачем: одна строка, почему это важно (необязательно)
+   срок: "2026-09-10" или "—" (необязательно)                              */
+const ЗАДАЧИ = [
+  // Пусто. Сюда попадает всё, что осталось за тобой: пароль, токен, ручная загрузка.
+  // {что:"Вписать TELEGRAM_TOKEN в .env", кто:"я", состояние:"ждёт меня",
+  //  зачем:"без него бот не запустится", срок:"—"}
+];
+
+/* ─────────── 3. ЖУРНАЛ — что уже делали (новое в начало) ─────────── */
+const ЖУРНАЛ = [
+  // Пусто. Агенты дописывают сюда строку после каждой работы, новое — в начало.
+  // {когда:"2026-01-10T14:30:00", агент:"Монтажёр", что:"собрал урок 3",
+  //  итог:"готово", файл:"результаты/урок-3.mp4"}
+];
+</script>
+<style>
+  :root, :root[data-theme="light"]{
+    --bg:#fbfbfa; --panel:#fff; --ink:#16150f; --dim:#6b6a63; --line:#e4e3dd;
+    --accent:#111; --ok:#1f7a4d; --warn:#a8700a; --bad:#b3352b; --ghost:#eeede8; --info:#2f6690;
+    --radius:14px; --glow:rgba(168,112,10,.38);
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme]){
+      --bg:#141412; --panel:#1c1c19; --ink:#f2f1ea; --dim:#918f86; --line:#2e2e29;
+      --accent:#f2f1ea; --ok:#4bbd84; --warn:#d9a341; --bad:#e0685c; --ghost:#262622; --info:#7aa8d4;
+      --glow:rgba(217,163,65,.45);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#141412; --panel:#1c1c19; --ink:#f2f1ea; --dim:#918f86; --line:#2e2e29;
+    --accent:#f2f1ea; --ok:#4bbd84; --warn:#d9a341; --bad:#e0685c; --ghost:#262622; --info:#7aa8d4;
+    --glow:rgba(217,163,65,.45);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.5 ui-sans-serif,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+    -webkit-font-smoothing:antialiased;padding:34px 20px 60px}
+  .wrap{max-width:1040px;margin:0 auto;min-width:0}
+
+  .top{display:flex;align-items:baseline;gap:16px;margin-bottom:6px;flex-wrap:wrap}
+  h1{font-size:19px;font-weight:650;margin:0;letter-spacing:-.01em}
+  .segs{margin-left:auto;display:flex;gap:8px;flex:0 0 auto}
+  .seg{display:flex;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+  .seg button{appearance:none;border:0;background:transparent;color:var(--dim);cursor:pointer;
+    font:600 11px/1 inherit;letter-spacing:.08em;padding:8px 12px}
+  .seg button:hover{color:var(--ink)}
+  .seg button[aria-pressed="true"]{background:var(--accent);color:var(--bg)}
+  .подзаголовок{font-size:12.5px;color:var(--dim);margin-bottom:20px}
+
+  /* общий прогресс */
+  .overall{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:16px 18px;margin-bottom:14px}
+  .overall-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+    font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
+  .overall-head b{font-size:24px;font-weight:650;letter-spacing:-.02em;text-transform:none;
+    color:var(--ink);font-variant-numeric:tabular-nums}
+  .overall-head b small{font-size:14px;font-weight:500;color:var(--dim)}
+  .bar{height:10px;background:var(--ghost);border-radius:99px;overflow:hidden;margin-top:12px;display:flex}
+  .bar i{display:block;height:100%;transition:width .3s ease}
+  .bar i.ok{background:var(--ok)}
+  .bar i.run{background:var(--warn)}
+  .bar i.wait{background:var(--info)}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:12.5px;color:var(--dim)}
+  .dot{display:inline-block;width:7px;height:7px;border-radius:99px;margin-right:6px;vertical-align:1px}
+
+  /* карточки-показатели */
+  .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr));margin-bottom:14px}
+  .grid.m{grid-template-columns:repeat(auto-fit,minmax(min(168px,100%),1fr))}
+  .grid.cards{grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr))}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;min-width:0}
+  .k{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);margin-bottom:8px}
+  .v{font-size:30px;font-weight:650;letter-spacing:-.03em;line-height:1.1;
+    font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+  .v.small{font-size:clamp(17px,4.4vw,22px)}
+  .v small{font-size:14px;font-weight:500;color:var(--dim);letter-spacing:0}
+  .sub{font-size:12.5px;color:var(--dim);margin-top:6px;overflow-wrap:anywhere}
+
+  h2{font-size:12px;letter-spacing:.07em;text-transform:uppercase;color:var(--dim);
+    margin:26px 0 12px;font-weight:600;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+
+  /* список задач */
+  .tl{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;min-width:0}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+  .chip{font-size:11.5px;letter-spacing:.03em;border:1px solid var(--line);border-radius:999px;
+    padding:4px 11px;color:var(--dim);font-variant-numeric:tabular-nums;background:transparent;
+    cursor:pointer;font-family:inherit}
+  .chip:hover{color:var(--ink)}
+  .chip[aria-pressed="true"]{background:var(--accent);color:var(--bg);border-color:var(--accent)}
+  .chip.ok{border-color:var(--ok);color:var(--ok)}
+  .chip.run{border-color:var(--warn);color:var(--warn)}
+  .chip.wait{border-color:var(--info);color:var(--info)}
+  .row{display:grid;grid-template-columns:26px minmax(0,1fr) auto;gap:10px;align-items:center;
+    margin-bottom:8px;font-size:13px}
+  .row b{font-weight:600;font-variant-numeric:tabular-nums;color:var(--dim)}
+  .row.now b{color:var(--ink)}
+  .track{background:var(--ghost);border-radius:6px;min-height:26px;position:relative;overflow:hidden;min-width:0}
+  .fill{position:absolute;inset:0;border-radius:6px;display:flex;align-items:center;gap:8px;
+    padding:0 10px;font-size:12.5px;color:#fff;overflow:hidden}
+  .fill .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .fill .ph{font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;opacity:.9;
+    border:1px solid rgba(255,255,255,.5);border-radius:999px;padding:1px 7px;flex:none;white-space:nowrap}
+  .row.done .fill{background:var(--ok)}
+  .row.now .fill{background:var(--warn)}
+  .row.wait .fill{background:var(--info)}
+  .row.todo .track{background:transparent;border:1px dashed var(--line)}
+  .row.todo .fill{background:transparent;color:var(--dim)}
+  .row.todo .fill .ph{border-color:var(--line);color:var(--dim)}
+  .row.now .track{animation:trackGlow 1.9s ease-in-out infinite}
+  .row.now .fill::after{content:'';position:absolute;inset:0;
+    background:linear-gradient(90deg,transparent 0,rgba(255,255,255,.30) 50%,transparent 100%);
+    transform:translateX(-100%);animation:sheen 1.9s ease-in-out infinite}
+  .state{text-align:right;font-size:12px;color:var(--dim);white-space:nowrap}
+  .why{grid-column:2/4;font-size:12px;color:var(--dim);margin:-4px 0 6px;overflow-wrap:anywhere}
+  @keyframes trackGlow{0%,100%{box-shadow:0 0 0 0 var(--glow)}50%{box-shadow:0 0 0 4px transparent}}
+  @keyframes sheen{to{transform:translateX(100%)}}
+  @media (prefers-reduced-motion:reduce){
+    .row.now .track{animation:none;box-shadow:0 0 0 3px var(--glow)}
+    .row.now .fill::after{animation:none;background:none}
+  }
+
+  /* карточки агентов */
+  .агент{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:16px 18px;min-width:0;display:flex;flex-direction:column}
+  .агент .имя{font-size:15px;font-weight:650;margin-bottom:6px;letter-spacing:-.01em}
+  .агент .умеет{color:var(--dim);font-size:12.5px;margin-bottom:12px}
+  .зовут{font-size:12.5px;background:var(--bg);border:1px solid var(--line);border-radius:8px;
+    padding:7px 10px;margin-bottom:12px;overflow-wrap:anywhere}
+  .низ{display:flex;justify-content:space-between;align-items:center;gap:10px;
+    font-size:12px;color:var(--dim);margin-top:auto;flex-wrap:wrap}
+  .badge{font-size:11px;letter-spacing:.04em;text-transform:uppercase;font-weight:600;
+    border:1px solid var(--line);border-radius:999px;padding:3px 10px;color:var(--dim)}
+  .badge.свободен{color:var(--ok);border-color:var(--ok)}
+  .badge.работает{color:var(--warn);border-color:var(--warn)}
+  .badge.ждёт{color:var(--info);border-color:var(--info)}
+  .badge.собирается{color:var(--warn);border-color:var(--warn)}
+  .ход{color:var(--info);text-decoration:none;border-bottom:1px dashed currentColor}
+  .ход:hover{opacity:.75}
+  .мини{height:5px;background:var(--ghost);border-radius:99px;overflow:hidden;margin:0 0 10px}
+  .мини i{display:block;height:100%;background:var(--warn);border-radius:99px}
+
+  /* журнал */
+  table{width:100%;border-collapse:collapse;font-size:13px;background:var(--panel);
+    border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+  th{text-align:left;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--dim);
+    font-weight:600;padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr:last-child td{border-bottom:0}
+  td.когда{white-space:nowrap;color:var(--dim);font-variant-numeric:tabular-nums}
+  td.кто{white-space:nowrap;font-weight:600}
+  .scroll{overflow-x:auto}
+  .scroll table{min-width:620px}
+  .ещё{margin-top:12px;font-size:12.5px}
+  .ещё button{appearance:none;background:transparent;border:1px solid var(--line);border-radius:999px;
+    padding:6px 14px;color:var(--dim);cursor:pointer;font:inherit;font-size:12.5px}
+  .ещё button:hover{color:var(--ink)}
+
+  .пусто{background:var(--panel);border:1px dashed var(--line);border-radius:var(--radius);
+    padding:26px;text-align:center;color:var(--dim);font-size:13px}
+  footer{margin-top:28px;font-size:12px;color:var(--dim);line-height:1.7;
+    border-top:1px solid var(--line);padding-top:16px}
+  footer code{background:var(--ghost);border-radius:4px;padding:1px 5px;overflow-wrap:anywhere}
+
+  @media (max-width:460px){
+    body{padding:20px 12px 44px}
+    h1{font-size:17px}
+    .card,.overall,.tl,.агент{padding:13px 14px}
+    .v{font-size:25px}
+    .overall-head b{font-size:21px}
+    .row{grid-template-columns:22px minmax(0,1fr);gap:8px}
+    .state{display:none}
+    .why{grid-column:2/3}
+    .segs{margin-left:0}
+    .scroll table{min-width:0}
+    th:nth-child(4),td:nth-child(4){display:none}
+    th,td{padding:9px 8px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>Мои агенты</h1>
+    <div class="segs">
+      <div class="seg" role="group" aria-label="Тема">
+        <button data-тема="auto">АВТО</button>
+        <button data-тема="light">СВЕТ</button>
+        <button data-тема="dark">ТЬМА</button>
+      </div>
+    </div>
+  </div>
+  <div class="подзаголовок" id="обновлено"></div>
+
+  <div class="overall">
+    <div class="overall-head"><span>Задачи закрыты</span><b id="процент">0<small>%</small></b></div>
+    <div class="bar" id="полоса"></div>
+    <div class="legend" id="легенда"></div>
+  </div>
+
+  <div class="grid m" id="показатели"></div>
+
+  <h2>Что нужно сделать</h2>
+  <div class="tl">
+    <div class="chips" id="фильтры"></div>
+    <div id="задачи"></div>
+  </div>
+
+  <h2>Кто у меня работает</h2>
+  <div id="карточки"></div>
+
+  <h2>Что делали</h2>
+  <div id="журнал"></div>
+
+  <footer>
+    Файл живой: агенты сами дописывают сюда журнал и задачи. Открывается двойным кликом, интернет не нужен.<br>
+    Нужен новый агент — напиши в Claude Code: <code>/sborshchik</code> и опиши словами, кто тебе нужен.<br>
+    Правила окружения — в файле <code>CLAUDE.md</code> рядом.</footer>
+</div>
+
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const дата = s => { const d = new Date(s); return isNaN(d) ? "—" : d.toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}); };
+  const скл = (n,а,б,в) => { const x = Math.abs(n)%100, y = x%10;
+    return n + " " + (x>10&&x<20 ? в : y>1&&y<5 ? б : y===1 ? а : в); };
+
+  /* ── тема ── */
+  const КЛЮЧ = "дашборд-тема";
+  function тема(v, запомнить){
+    if (v === "auto") document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", v);
+    document.querySelectorAll("[data-тема]").forEach(b =>
+      b.setAttribute("aria-pressed", String(b.dataset.тема === v)));
+    if (запомнить) { try { localStorage.setItem(КЛЮЧ, v); } catch(e){} }
+  }
+  let сохранённая = "auto";
+  try { сохранённая = localStorage.getItem(КЛЮЧ) || "auto"; } catch(e){}
+  тема(сохранённая, false);
+  document.querySelectorAll("[data-тема]").forEach(b =>
+    b.addEventListener("click", () => тема(b.dataset.тема, true)));
+
+  /* ── задачи ── */
+  const ПОРЯДОК = {"в работе":0, "ждёт меня":1, "надо":2, "готово":3};
+  const КЛАСС   = {"в работе":"now", "ждёт меня":"wait", "надо":"todo", "готово":"done"};
+  const задачи = ЗАДАЧИ.slice().sort((a,b) =>
+    (ПОРЯДОК[a.состояние] ?? 2) - (ПОРЯДОК[b.состояние] ?? 2));
+
+  const счёт = с => задачи.filter(з => з.состояние === с).length;
+  const всего = задачи.length;
+  const готово = счёт("готово"), вРаботе = счёт("в работе"), ждут = счёт("ждёт меня"), надо = счёт("надо");
+  const процент = всего ? Math.round(готово / всего * 100) : 0;
+
+  $("процент").innerHTML = процент + "<small>%</small>";
+  $("полоса").innerHTML = всего ? [
+    ["ok", готово], ["run", вРаботе], ["wait", ждут]
+  ].map(([к,н]) => n2(к,н)).join("") : "";
+  function n2(к,н){ return н ? '<i class="'+к+'" style="width:'+(н/всего*100)+'%"></i>' : ""; }
+  $("легенда").innerHTML = всего ? [
+    ['var(--ok)',   готово + " готово"],
+    ['var(--warn)', вРаботе + " в работе"],
+    ['var(--info)', ждут + " ждут меня"],
+    ['var(--line)', надо + " в очереди"]
+  ].map(([ц,т]) => '<span><i class="dot" style="background:'+ц+'"></i>'+esc(т)+'</span>').join("")
+   : '<span>Задач пока нет.</span>';
+
+  let фильтр = "все";
+  const ФИЛЬТРЫ = [
+    ["все", "все · " + всего, ""],
+    ["ждёт меня", "ждут меня · " + ждут, "wait"],
+    ["в работе", "в работе · " + вРаботе, "run"],
+    ["надо", "в очереди · " + надо, ""],
+    ["готово", "готово · " + готово, "ok"]
+  ];
+  function рисуемФильтры(){
+    $("фильтры").innerHTML = ФИЛЬТРЫ.map(([к,т,цв]) =>
+      '<button class="chip '+цв+'" data-ф="'+esc(к)+'" aria-pressed="'+(фильтр===к)+'">'+esc(т)+'</button>').join("");
+    $("фильтры").querySelectorAll("[data-ф]").forEach(b =>
+      b.addEventListener("click", () => { фильтр = b.dataset.ф; рисуемФильтры(); рисуемЗадачи(); }));
+  }
+  function рисуемЗадачи(){
+    const список = фильтр === "все" ? задачи : задачи.filter(з => з.состояние === фильтр);
+    $("задачи").innerHTML = список.length ? список.map((з,i) => {
+      const к = КЛАСС[з.состояние] || "todo";
+      const срок = з.срок && з.срок !== "—" ? " · до " + esc(з.срок) : "";
+      return '<div class="row '+к+'">'
+        + '<b>'+String(i+1).padStart(2,"0")+'</b>'
+        + '<div class="track"><div class="fill">'
+        +   '<span class="nm">'+esc(з.что)+'</span>'
+        +   (з.кто ? '<span class="ph">'+esc(з.кто)+'</span>' : '')
+        + '</div></div>'
+        + '<div class="state">'+esc(з.состояние)+'</div>'
+        + (з.зачем ? '<div class="why">'+esc(з.зачем)+срок+'</div>' : (срок ? '<div class="why">'+срок.replace(" · ","")+'</div>' : ''))
+        + '</div>';
+    }).join("") : '<div class="пусто">Здесь пусто — в этой стопке ничего нет.</div>';
+  }
+  рисуемФильтры(); рисуемЗадачи();
+
+  /* ── показатели ── */
+  const сегодня = new Date().toDateString();
+  const работСегодня = ЖУРНАЛ.filter(з => new Date(з.когда).toDateString() === сегодня).length;
+  const запусков = АГЕНТЫ.reduce((s,а) => s + (а.запусков || 0), 0);
+  const собирается = АГЕНТЫ.filter(а => а.состояние === "собирается").length;
+  const готовых = АГЕНТЫ.length - собирается;
+  const последняя = ЖУРНАЛ.length ? ЖУРНАЛ[0] : null;
+
+  $("показатели").innerHTML = [
+    ['Ждут меня', ждут, ждут ? 'без тебя не двинется' : 'ничего не висит — можно выдохнуть'],
+    ['Открыто задач', всего - готово, всего ? 'из ' + скл(всего,"задачи","задач","задач") + ' всего' : 'задач пока нет'],
+    ['Агентов', готовых, собирается ? 'собирается ещё ' + собирается : готовых ? 'все собраны' : 'пока ни одного'],
+    ['Запусков', запусков, работСегодня ? скл(работСегодня,"работа","работы","работ") + ' сегодня' : 'сегодня тихо'],
+    ['Последняя работа', последняя ? дата(последняя.когда) : '—', последняя ? esc(последняя.агент) : '—', true]
+  ].map(([k,v,sub,мелко]) =>
+    '<div class="card"><div class="k">'+esc(k)+'</div>'
+    + '<div class="v'+(мелко ? ' small' : '')+'">'+esc(v)+'</div>'
+    + '<div class="sub">'+sub+'</div></div>').join("");
+
+  /* ── агенты ── */
+  $("карточки").innerHTML = АГЕНТЫ.length
+    ? '<div class="grid cards">' + АГЕНТЫ.map(а => {
+        const сост = а.состояние || "свободен";
+        return '<div class="агент">'
+          + '<div class="имя">'+esc(а.имя)+'</div>'
+          + '<div class="умеет">'+esc(а.умеет || "")+'</div>'
+          + '<div class="зовут">«'+esc(а.зовут && а.зовут !== "—" ? а.зовут : "позови своими словами")+'»</div>'
+          + (typeof а.прогресс === "number"
+              ? '<div class="мини"><i style="width:'+Math.max(0,Math.min(100,а.прогресс))+'%"></i></div>' : '')
+          + '<div class="низ">'
+          +   '<span class="badge '+esc(сост)+'">'+esc(сост)+'</span>'
+          +   '<span>' + (а.ход ? '<a class="ход" href="'+esc(а.ход)+'">ход сборки →</a>'
+                                : 'запусков: ' + (а.запусков || 0)) + '</span>'
+          + '</div></div>';
+      }).join("") + '</div>'
+    : '<div class="пусто">Пока ни одного агента.<br>Напиши в Claude Code: <b>/sborshchik</b> — и опиши, кто тебе нужен.</div>';
+
+  /* ── журнал ── */
+  let развёрнут = false;
+  function рисуемЖурнал(){
+    if (!ЖУРНАЛ.length) {
+      $("журнал").innerHTML = '<div class="пусто">Записей пока нет. Они появятся, когда агенты начнут работать.</div>';
+      return;
+    }
+    const видно = развёрнут ? ЖУРНАЛ : ЖУРНАЛ.slice(0,10);
+    $("журнал").innerHTML = '<div class="scroll"><table>'
+      + '<tr><th>Когда</th><th>Кто</th><th>Что сделал</th><th>Итог</th></tr>'
+      + видно.map(з => '<tr>'
+          + '<td class="когда">'+дата(з.когда)+'</td>'
+          + '<td class="кто">'+esc(з.агент)+'</td>'
+          + '<td>'+esc(з.что)+'</td>'
+          + '<td>'+esc(з.итог || "—")+'</td>'
+        + '</tr>').join("")
+      + '</table></div>'
+      + (ЖУРНАЛ.length > 10
+          ? '<div class="ещё"><button id="ещё">' + (развёрнут ? 'свернуть' : 'показать все · ' + ЖУРНАЛ.length) + '</button></div>'
+          : '');
+    const b = $("ещё");
+    if (b) b.addEventListener("click", () => { развёрнут = !развёрнут; рисуемЖурнал(); });
+  }
+  рисуемЖурнал();
+
+  $("обновлено").textContent = "Открыто "
+    + new Date().toLocaleString("ru-RU",{day:"2-digit",month:"long",hour:"2-digit",minute:"2-digit"});
+})();
+</script>
+</body>
+</html>

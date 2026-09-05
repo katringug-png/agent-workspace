@@ -1,0 +1,7 @@
+# Концы строк. Без этого install.sh, скачанный на Windows и запущенный на Mac,
+# падает с «bad interpreter»: интерпретатор читает \r как часть имени файла.
+* text=auto
+*.sh   text eol=lf
+*.ps1  text eol=crlf
+*.md   text eol=lf
+*.html text eol=lf

@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ход сборки</title>
+<!--
+  ЭТО ОБРАЗЕЦ ТАБЛО. Копирую его в папку проекта под именем «Ход сборки.html».
+
+  ПРАВИЛО: я меняю ТОЛЬКО блок СОСТОЯНИЕ ниже и ТОЛЬКО при смене шага.
+  Таймеры, полосу и оценку «осталось» считает сама страница — это ничего не стоит.
+  Перезаписывать файл по таймеру НЕЛЬЗЯ.
+
+  Пустые поля просто не показываются — заполняю то, что знаю. Что каждое значит:
+
+    завершено   время сдачи. Проставляю в самом конце: часы замирают, вместо
+                бегущего счётчика человек видит «сдан». Без него табло через
+                45 минут скажет «не обновлялось» — честнее, чем счётчик,
+                который тикает вторые сутки.
+    требований  сколько пунктов было в заказе и уточнениях, и сколько закрыто.
+                Это «покрытие заказа»: сделал ли я то, что человек просил.
+    пункты      список пунктов плана: [{что:"…", готово:true}, …]. Человек видит
+                не только «20 из 38», но и что именно.
+    осталосьУточнить  ЗАГЛУШКИ: где я оставил пропуск, потому что нужны данные
+                человека — телефон, цены, настоящие мерки.
+    решенияЗаМеня     что я решил сам, не спросив. Человек должен это увидеть
+                и иметь возможность сказать «нет, не так».
+    переменные  имена ключей для `.env`, которые человек вписывает сам.
+                ТОЛЬКО ИМЕНА. Значение ключа не пишу ни сюда, ни куда-либо ещё.
+    расхождения что на проверке не сошлось. Пусто и сдано — «расхождений нет».
+    итоги      ГЛАВНОЕ. Закрыл шаг — тут же дописываю сюда строку про него:
+               что сделано и что теперь работает. Человек читает табло, чтобы
+               понять, что у него появилось, а не чтобы посмотреть на проценты.
+               `работает` — то, что уже можно потрогать; нечего — не пишу.
+-->
+<script>
+const СОСТОЯНИЕ = {
+  агент: "—",
+  шаг: 1,
+  шагНазвание: "Заказ",
+  началоРаботы: "2026-08-17T12:00:00",
+  началоШага: "2026-08-17T12:00:00",
+  завершено: null,
+
+  итоги: [
+    // {шаг:1, сделано:"записал заказ: кто нужен, зачем и на каких данных",
+    //         работает:"—"},
+    // {шаг:4, сделано:"собрал тело агента, правила и программку разбора",
+    //         работает:"агент запускается и разбирает пробный файл"}
+  ],
+
+  требований: 0,
+  требованийЗакрыто: 0,
+
+  пунктовВсего: 0,
+  пунктовЗакрыто: 0,
+  пункты: [],
+
+  сейчасДелаю: "записываю, кто нужен",
+  безопасность: "—",
+
+  осталосьУточнить: [],
+  решенияЗаМеня: [],
+  переменные: [],
+  расхождения: []
+};
+const ШАГИ = ["Заказ", "Уточнения", "План сборки", "Сборка", "Проверка"];
+const ТИПОВЫЕ_МИНУТЫ = [2, 4, 3, 12, 6];
+</script>
+<style>
+  :root, :root[data-theme="light"]{
+    --bg:#fbfbfa; --panel:#fff; --ink:#16150f; --dim:#6b6a63; --line:#e4e3dd;
+    --accent:#111; --ok:#1f7a4d; --warn:#a8700a; --bad:#b3352b; --ghost:#eeede8; --info:#2f6690;
+    --radius:14px; --glow:rgba(168,112,10,.38);
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme]){
+      --bg:#141412; --panel:#1c1c19; --ink:#f2f1ea; --dim:#918f86; --line:#2e2e29;
+      --accent:#f2f1ea; --ok:#4bbd84; --warn:#d9a341; --bad:#e0685c; --ghost:#262622; --info:#7aa8d4;
+      --glow:rgba(217,163,65,.45);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#141412; --panel:#1c1c19; --ink:#f2f1ea; --dim:#918f86; --line:#2e2e29;
+    --accent:#f2f1ea; --ok:#4bbd84; --warn:#d9a341; --bad:#e0685c; --ghost:#262622; --info:#7aa8d4;
+    --glow:rgba(217,163,65,.45);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.5 ui-sans-serif,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+    -webkit-font-smoothing:antialiased;padding:34px 20px 60px}
+  .wrap{max-width:980px;margin:0 auto;min-width:0}
+
+  .top{display:flex;align-items:baseline;gap:16px;margin-bottom:6px;flex-wrap:wrap}
+  h1{font-size:19px;font-weight:650;margin:0;letter-spacing:-.01em}
+  .segs{margin-left:auto;display:flex;gap:8px;flex:0 0 auto}
+  .seg{display:flex;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+  .seg button{appearance:none;border:0;background:transparent;color:var(--dim);cursor:pointer;
+    font:600 11px/1 inherit;letter-spacing:.08em;padding:8px 12px}
+  .seg button:hover{color:var(--ink)}
+  .seg button[aria-pressed="true"]{background:var(--accent);color:var(--bg)}
+  header{display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;margin-bottom:20px}
+  .кто{font-size:13px;color:var(--dim);overflow-wrap:anywhere}
+  .badges{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+  .badge{font-size:11px;letter-spacing:.04em;text-transform:uppercase;font-weight:600;
+    border:1px solid var(--line);border-radius:999px;padding:3px 10px;color:var(--dim)}
+  .badge.ok{color:var(--ok);border-color:var(--ok)}
+  .badge.run{color:var(--warn);border-color:var(--warn)}
+  .badge.stale{color:var(--bad);border-color:var(--bad)}
+  .badge.debt{color:var(--info);border-color:var(--info)}
+
+  .overall{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:16px 18px;margin-bottom:14px}
+  .overall-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+    font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
+  .overall-head b{font-size:24px;font-weight:650;letter-spacing:-.02em;text-transform:none;
+    color:var(--ink);font-variant-numeric:tabular-nums}
+  .overall-head b small{font-size:14px;font-weight:500;color:var(--dim)}
+  .bar{height:10px;background:var(--ghost);border-radius:99px;overflow:hidden;margin-top:12px}
+  .bar i{display:block;height:100%;background:var(--accent);border-radius:99px;transition:width .6s ease}
+  .bar i.done{background:var(--ok)}
+
+  .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr));margin-bottom:14px}
+  .grid.m{grid-template-columns:repeat(auto-fit,minmax(min(172px,100%),1fr))}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;min-width:0}
+  .k{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);margin-bottom:8px}
+  .v{font-size:30px;font-weight:650;letter-spacing:-.03em;line-height:1.1;
+    font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+  .v.stage{font-size:clamp(17px,4.4vw,22px)}
+  .v small{font-size:14px;font-weight:500;color:var(--dim);letter-spacing:0}
+  .sub{font-size:12.5px;color:var(--dim);margin-top:6px;overflow-wrap:anywhere}
+  .sub.тревога{color:var(--bad)}
+  .hero{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+  .hero>div{min-width:0}
+  .ring{flex:0 0 76px}
+  .paused{opacity:.5}
+
+  h2{font-size:12px;letter-spacing:.07em;text-transform:uppercase;color:var(--dim);
+    margin:26px 0 12px;font-weight:600}
+
+  /* лестница шагов — вертикальная лента с рельсом */
+  .stages{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:4px 18px;min-width:0}
+  .st{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:12px;align-items:start;
+    padding:11px 0;border-bottom:1px solid var(--line)}
+  .st:last-child{border-bottom:0}
+  .st .rail{position:relative;align-self:stretch;min-height:18px}
+  .st .rail::before{content:"";position:absolute;left:9px;top:-11px;bottom:-11px;width:1px;background:var(--line)}
+  .st:first-child .rail::before{top:9px}
+  .st:last-child .rail::before{bottom:calc(100% - 9px)}
+  .st .rail i{position:absolute;left:4px;top:3px;width:11px;height:11px;border-radius:99px;
+    box-sizing:border-box;border:2px solid var(--line);background:var(--panel)}
+  .st.done .rail i{background:var(--ok);border-color:var(--ok)}
+  .st.active .rail i{background:var(--warn);border-color:var(--warn);animation:pulse 1.6s ease-in-out infinite}
+  .st>div{min-width:0}
+  .st .nm{font-size:13.5px;overflow-wrap:anywhere}
+  .st.active .nm{font-weight:650}
+  .st.done .nm{color:var(--dim)}
+  /* отчёт по закрытому шагу: ради него человек и открывает табло */
+  .st .отчёт{margin-top:5px;font-size:12.5px;color:var(--ink);overflow-wrap:anywhere}
+  .st.done .отчёт{color:var(--ink)}
+  .st .работает{display:block;margin-top:4px;color:var(--ok);font-size:12.5px}
+  .st .работает::before{content:"✓ ";font-weight:700}
+  .st .mins{text-align:right;font-variant-numeric:tabular-nums;color:var(--dim);font-size:12px;padding-top:1px;white-space:nowrap}
+  .st.active .mins{color:var(--warn)}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 var(--glow)}50%{box-shadow:0 0 0 5px transparent}}
+  @media (prefers-reduced-motion:reduce){.st.active .rail i{animation:none;box-shadow:0 0 0 4px var(--glow)}}
+
+  /* пункты плана */
+  .row{display:grid;grid-template-columns:26px minmax(0,1fr) auto;gap:10px;align-items:center;
+    margin-bottom:7px;font-size:13px}
+  .row:last-child{margin-bottom:0}
+  .row b{font-weight:600;font-variant-numeric:tabular-nums;color:var(--dim)}
+  .track{background:var(--ghost);border-radius:6px;min-height:24px;position:relative;overflow:hidden;min-width:0}
+  .fill{position:absolute;inset:0;border-radius:6px;display:flex;align-items:center;
+    padding:0 10px;font-size:12.5px;color:#fff;overflow:hidden}
+  .fill .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .row.done .fill{background:var(--ok)}
+  .row.todo .track{background:transparent;border:1px dashed var(--line)}
+  .row.todo .fill{background:transparent;color:var(--dim)}
+  .state{text-align:right;font-size:12px;color:var(--dim);white-space:nowrap}
+
+  .строка{display:flex;justify-content:space-between;gap:16px;padding:9px 0;border-bottom:1px solid var(--line);
+    font-size:13.5px;flex-wrap:wrap}
+  .строка:last-child{border-bottom:0}
+  .строка .имя{color:var(--dim);font-size:12.5px}
+  .строка .знач{text-align:right;overflow-wrap:anywhere;min-width:0}
+
+  /* окошки долга */
+  ul.список{margin:0;padding-left:18px}
+  ul.список li{margin-bottom:6px;font-size:13px;overflow-wrap:anywhere}
+  ul.список li:last-child{margin-bottom:0}
+  ul.список.ключи{list-style:none;padding-left:0}
+  ul.список.ключи li{font-family:ui-monospace,"Cascadia Mono",Consolas,monospace;font-size:12.5px}
+  ul.список.ключи code{background:var(--ghost);border-radius:5px;padding:2px 7px;font-weight:600}
+  .пусто{color:var(--dim);font-size:13px}
+  .подпись{font-size:12px;color:var(--dim);margin:-6px 0 12px}
+  footer{margin-top:28px;font-size:12px;color:var(--dim);line-height:1.7;
+    border-top:1px solid var(--line);padding-top:16px}
+
+  @media (max-width:460px){
+    body{padding:20px 12px 44px}
+    h1{font-size:17px}
+    .card,.overall{padding:13px 14px}
+    .stages{padding:2px 14px}
+    .v{font-size:25px}
+    .overall-head b{font-size:21px}
+    .ring{flex:0 0 64px}
+    .row{grid-template-columns:22px minmax(0,1fr);gap:8px}
+    .state{display:none}
+    .st{grid-template-columns:18px minmax(0,1fr) auto;gap:9px}
+    .badges{margin-left:0}
+    .segs{margin-left:0}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>Ход сборки</h1>
+    <div class="segs">
+      <div class="seg" role="group" aria-label="Тема">
+        <button data-тема="auto">АВТО</button>
+        <button data-тема="light">СВЕТ</button>
+        <button data-тема="dark">ТЬМА</button>
+      </div>
+    </div>
+  </div>
+  <header>
+    <div class="кто" id="агент"></div>
+    <div class="badges" id="бейджи"></div>
+  </header>
+
+  <div class="overall">
+    <div class="overall-head"><span id="полосаИмя">Готовность</span><b id="процент">0<small>%</small></b></div>
+    <div class="bar"><i id="полоса" style="width:0%"></i></div>
+    <div class="sub" id="полосаПод"></div>
+  </div>
+
+  <div class="grid m" id="показатели"></div>
+  <div class="grid m" id="показатели2"></div>
+
+  <h2>Шаги сборки</h2>
+  <div class="stages" id="лестница"></div>
+
+  <h2>Что происходит</h2>
+  <div class="card">
+    <div class="строка"><span class="имя">Сейчас делаю</span><span class="знач" id="сейчас"></span></div>
+    <div class="строка"><span class="имя">Проверка безопасности</span><span class="знач" id="безопасность"></span></div>
+    <div class="строка"><span class="имя">Начал</span><span class="знач" id="начал"></span></div>
+  </div>
+
+  <div id="блокПунктов" hidden>
+    <h2>Пункты плана</h2>
+    <div class="card" id="пункты"></div>
+  </div>
+
+  <div id="блокДолга" hidden>
+    <h2>Что осталось закрыть</h2>
+    <div class="подпись" id="подписьДолга"></div>
+    <div class="grid" id="долг"></div>
+  </div>
+
+  <div id="блокПриёмки" hidden>
+    <h2>Приёмка</h2>
+    <div class="card" id="приёмка"></div>
+  </div>
+
+  <footer id="подвал"></footer>
+</div>
+
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const дв = n => String(n).padStart(2,"0");
+  // до суток — часы:минуты:секунды, дальше «12 дн 09 ч»: 297:26:00 человек не читает
+  const время = сек => { сек = Math.max(0, Math.floor(сек));
+    if (сек >= 86400) return Math.floor(сек/86400) + " дн " + дв(Math.floor(сек%86400/3600)) + " ч";
+    const ч = Math.floor(сек/3600), м = Math.floor(сек%3600/60), с = сек%60;
+    return ч ? ч + ":" + дв(м) + ":" + дв(с) : дв(м) + ":" + дв(с); };
+  const мин = м => { м = Math.round(м);
+    return м < 60 ? м + " мин" : Math.floor(м/60) + " ч " + дв(м%60) + " мин"; };
+  const давно = сек => { const д = Math.floor(сек/86400), ч = Math.floor(сек/3600);
+    return д >= 1 ? д + (д===1?" день":д<5?" дня":" дней") : ч >= 1 ? ч + (ч===1?" час":ч<5?" часа":" часов")
+                  : Math.floor(сек/60) + " мин"; };
+  const дата = s => { const d = new Date(s); return isNaN(d) ? "—"
+    : d.toLocaleString("ru-RU",{day:"2-digit",month:"long",hour:"2-digit",minute:"2-digit"}); };
+  const скл = (n,а,б,в) => { const x = Math.abs(n)%100, y = x%10;
+    return x>10&&x<20 ? в : y>1&&y<5 ? б : y===1 ? а : в; };
+  const мас = v => Array.isArray(v) ? v : [];
+
+  /* ── тема ── */
+  const КЛЮЧ = "табло-тема";
+  function тема(v, запомнить){
+    if (v === "auto") document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", v);
+    document.querySelectorAll("[data-тема]").forEach(b =>
+      b.setAttribute("aria-pressed", String(b.dataset.тема === v)));
+    if (запомнить) { try { localStorage.setItem(КЛЮЧ, v); } catch(e){} }
+  }
+  let сохранённая = "auto";
+  try { сохранённая = localStorage.getItem(КЛЮЧ) || "auto"; } catch(e){}
+  тема(сохранённая, false);
+  document.querySelectorAll("[data-тема]").forEach(b =>
+    b.addEventListener("click", () => тема(b.dataset.тема, true)));
+
+  /* ── разбор состояния ── */
+  const с = СОСТОЯНИЕ;
+  const ПРОСТОЙ = 45 * 60;                       // секунд без обновления — и табло признаётся остывшим
+  const всегоМин = ТИПОВЫЕ_МИНУТЫ.reduce((a,b) => a+b, 0);
+  const t0 = new Date(с.началоРаботы).getTime();
+  const tш = new Date(с.началоШага).getTime();
+  const последнийШаг = с.шаг >= ШАГИ.length;
+  const всёЗакрыто = с.пунктовВсего > 0 && с.пунктовЗакрыто >= с.пунктовВсего;
+  const завершено = с.завершено ? new Date(с.завершено).getTime() : null;
+  const сдан = !!завершено || (последнийШаг && всёЗакрыто);
+  const конец = завершено || (сдан ? tш : null);  // без записанного времени сдачи берём начало последнего шага
+
+  const заглушки = мас(с.осталосьУточнить);
+  const решения  = мас(с.решенияЗаМеня);
+  const ключи    = мас(с.переменные);
+  const расхожд  = мас(с.расхождения);
+  const долгN    = заглушки.length + решения.length + ключи.length;
+
+  $("агент").textContent = с.агент && с.агент !== "—" ? с.агент : "агент ещё без названия";
+
+  /* ── кольцо ── */
+  function кольцо(p){
+    const r = 30, c = 2 * Math.PI * r;
+    return '<svg class="ring" viewBox="0 0 72 72" width="72" height="72" aria-hidden="true">'
+      + '<circle cx="36" cy="36" r="30" fill="none" stroke="var(--ghost)" stroke-width="7"/>'
+      + '<circle cx="36" cy="36" r="30" fill="none" stroke="var(--ok)" stroke-width="7" stroke-linecap="round"'
+      +   ' stroke-dasharray="'+c+'" stroke-dashoffset="'+(c*(1-p/100))+'" transform="rotate(-90 36 36)"/>'
+      + '<text x="36" y="41" text-anchor="middle" font-size="17" font-weight="650" fill="var(--ink)"'
+      +   ' font-family="ui-sans-serif,system-ui,sans-serif">'+p+'%</text></svg>';
+  }
+
+  /* ── первый ряд: покрытие заказа, шаг, часы, осталось ── */
+  // покрытия заказа может не быть (старые табло) — тогда кольцо показывает план сборки
+  const естьТреб = с.требований > 0;
+  const покрытие = естьТреб ? Math.round(с.требованийЗакрыто / с.требований * 100)
+                 : с.пунктовВсего ? Math.round(с.пунктовЗакрыто / с.пунктовВсего * 100) : 0;
+  $("показатели").innerHTML =
+      '<div class="card"><div class="k">' + (естьТреб ? 'Покрытие заказа' : 'Готовность плана') + '</div>'
+    +   '<div class="hero">' + кольцо(покрытие)
+    +   '<div><div class="v">' + покрытие + '<small>%</small></div>'
+    +   '<div class="sub">' + (естьТреб
+          ? с.требованийЗакрыто + ' из ' + с.требований + ' пунктов заказа'
+          : с.пунктовЗакрыто + ' из ' + с.пунктовВсего + ' пунктов плана') + '</div></div></div></div>'
+    + '<div class="card"><div class="k">Шаг</div>'
+    +   '<div class="v stage">' + esc(с.шагНазвание) + '</div>'
+    +   '<div class="sub">шаг ' + с.шаг + ' из ' + ШАГИ.length + '</div></div>'
+    + '<div class="card"><div class="k">' + (сдан ? 'Заняло' : 'Идёт') + '</div>'
+    +   '<div class="v" id="часыВсего">—</div>'
+    +   '<div class="sub" id="подЧасами"></div>'
+    +   '<div class="sub тревога" id="остыло" hidden></div></div>'
+    + '<div class="card"><div class="k">' + (сдан ? 'Итог' : 'Осталось примерно') + '</div>'
+    +   '<div class="v' + (сдан ? ' stage' : '') + '" id="осталось">—</div>'
+    +   '<div class="sub" id="подОсталось"></div></div>';
+
+  /* ── второй ряд: пункты плана, долг, что вписать, безопасность ── */
+  $("показатели2").innerHTML =
+      '<div class="card"><div class="k">Пункты плана</div>'
+    +   '<div class="v">' + с.пунктовЗакрыто + '<small> / ' + с.пунктовВсего + '</small></div>'
+    +   '<div class="sub">' + (с.пунктовВсего ? 'закрыто по плану сборки' : 'план ещё не составлен') + '</div></div>'
+    + '<div class="card"><div class="k">Долг</div>'
+    +   '<div class="v">' + долгN + '</div>'
+    +   '<div class="sub">заглушки ' + заглушки.length + ' · решения ' + решения.length
+    +     ' · переменные ' + ключи.length + '</div></div>'
+    + '<div class="card"><div class="k">Вписать в .env</div>'
+    +   '<div class="v">' + ключи.length + '</div>'
+    +   '<div class="sub">' + (ключи.length
+          ? скл(ключи.length,"ключ ждёт","ключа ждут","ключей ждут") + ' твоего значения'
+          : 'ключи не нужны') + '</div></div>'
+    + '<div class="card"><div class="k">Безопасность</div>'
+    +   '<div class="v stage">' + esc(с.безопасность || "—") + '</div>'
+    +   '<div class="sub">проверка на секреты и опасные действия</div></div>';
+
+  /* ── что происходит ── */
+  $("сейчас").textContent = с.сейчасДелаю || "—";
+  const прошла = /пройден|прошла/i.test(с.безопасность || "");
+  $("безопасность").innerHTML = '<span class="badge ' + (прошла ? 'ok' : '') + '">'
+    + esc(с.безопасность || "—") + '</span>';
+  $("начал").textContent = дата(с.началоРаботы);
+
+  /* ── пункты плана списком (если агент их записал) ── */
+  const пункты = мас(с.пункты);
+  if (пункты.length) {
+    $("блокПунктов").hidden = false;
+    $("пункты").innerHTML = пункты.map((п,i) =>
+      '<div class="row ' + (п.готово ? 'done' : 'todo') + '">'
+      + '<b>' + дв(i+1) + '</b>'
+      + '<div class="track"><div class="fill"><span class="nm">' + esc(п.что) + '</span></div></div>'
+      + '<div class="state">' + (п.готово ? 'готово' : 'в очереди') + '</div></div>').join("");
+  }
+
+  /* ── что осталось закрыть: три окошка ── */
+  function окошко(заголовок, элементы, пустоТекст, ключи){
+    return '<div class="card"><div class="k">' + esc(заголовок) + '</div>'
+      + (элементы.length
+          ? '<ul class="список' + (ключи ? ' ключи' : '') + '">'
+            + элементы.map(т => '<li>' + (ключи ? '<code>' + esc(т) + '</code>' : esc(т)) + '</li>').join("")
+            + '</ul>'
+          : '<div class="пусто">' + esc(пустоТекст) + '</div>')
+      + '</div>';
+  }
+  if (долгN) {
+    $("блокДолга").hidden = false;
+    $("подписьДолга").textContent =
+      "Всё, что нельзя было решить без тебя. Пока это не закрыто, агент работает с пропусками.";
+    $("долг").innerHTML =
+        окошко("Заглушки — нужны твои данные", заглушки, "Пропусков нет.")
+      + окошко("Решения, принятые за тебя", решения, "Ничего не решал сам.")
+      + окошко("Переменные в .env", ключи, "Ключи не нужны.", true);
+  }
+
+  /* ── приёмка ── */
+  if (сдан || расхожд.length) {
+    $("блокПриёмки").hidden = false;
+    const подтв = естьТреб ? с.требованийЗакрыто + ' / ' + с.требований + ' пунктов заказа подтверждено'
+                           : с.пунктовЗакрыто + ' / ' + с.пунктовВсего + ' пунктов плана закрыто';
+    $("приёмка").innerHTML = '<div class="v stage">' + подтв + '</div>'
+      + (расхожд.length
+          ? '<div class="sub">Расхождения:</div><ul class="список">'
+            + расхожд.map(т => '<li>' + esc(т) + '</li>').join("") + '</ul>'
+          : '<div class="sub">Расхождений нет.</div>');
+  }
+
+  $("подвал").innerHTML = 'Табло живое: агент дописывает сюда состояние на каждом шаге. '
+    + 'Часы и полоса считаются сами, интернет не нужен.<br>'
+    + 'Значения ключей на табло не попадают — только имена. Сами ключи живут в <b>.env</b>.<br>'
+    + 'Общий обзор всех агентов — файл <b>Дашборд.html</b> в корне папки «Агенты».';
+
+  /* ── лестница шагов ── */
+  // отчёт по шагу лежит в итоги[]; показываем его только у закрытых шагов —
+  // у идущего он ещё неправда, а у будущего его неоткуда взять
+  const ИТОГИ = {};
+  мас(с.итоги).forEach(и => { if (и && и.шаг) ИТОГИ[и.шаг] = и; });
+
+  function лестница(прошлоШага){
+    $("лестница").innerHTML = ШАГИ.map((имя,i) => {
+      const н = i + 1;
+      const закрыт = сдан || н < с.шаг;
+      const класс = закрыт ? "done" : н === с.шаг ? "active" : "";
+      const справа = закрыт ? "готово"
+                   : н === с.шаг ? время(прошлоШага)
+                   : "~" + ТИПОВЫЕ_МИНУТЫ[i] + " мин";
+      const и = закрыт ? ИТОГИ[н] : null;
+      const отчёт = и && (и.сделано || и.работает)
+        ? '<div class="отчёт">' + esc(и.сделано || "")
+          + (и.работает && и.работает !== "—"
+              ? '<span class="работает">работает: ' + esc(и.работает) + '</span>' : '')
+          + '</div>'
+        : '';
+      return '<div class="st ' + класс + '">'
+        + '<div class="rail"><i></i></div>'
+        + '<div><div class="nm">' + н + '. ' + esc(имя) + '</div>' + отчёт + '</div>'
+        + '<div class="mins">' + справа + '</div></div>';
+    }).join("");
+  }
+
+  /* ── бейджи ── */
+  function бейджи(остыло){
+    const b = ['<span class="badge">шаг ' + с.шаг + ' из ' + ШАГИ.length + '</span>'];
+    if (сдан) b.push('<span class="badge ok">сдан</span>');
+    else if (остыло) b.push('<span class="badge stale">не обновлялось</span>');
+    else b.push('<span class="badge run">идёт</span>');
+    if (долгN) b.push('<span class="badge debt">долг ' + долгN + '</span>');
+    $("бейджи").innerHTML = b.join("");
+  }
+
+  /* ── тик: только цифры, разметка не пересобирается ── */
+  function тик(){
+    const теперь = Date.now();
+    const прошлоШага = ((конец || теперь) - tш) / 1000;
+    const прошлоВсего = ((конец || теперь) - t0) / 1000;
+    const остыло = !сдан && прошлоШага > ПРОСТОЙ;
+    const заморожено = сдан || остыло;
+
+    $("часыВсего").textContent = время(прошлоВсего);
+    $("часыВсего").classList.toggle("paused", остыло);
+    $("подЧасами").textContent = сдан
+      ? (завершено ? "сдан " + дата(с.завершено) : "до начала последнего шага")
+      : "этот шаг: " + время(прошлоШага);
+
+    const о = $("остыло");
+    о.hidden = !остыло;
+    if (остыло) о.textContent = "табло не обновлялось " + давно(прошлоШага);
+
+    // прогресс: шаги по типовым срокам, внутри текущего — доля времени
+    const доТекущего = ТИПОВЫЕ_МИНУТЫ.slice(0, с.шаг - 1).reduce((a,b) => a+b, 0);
+    const вТекущем = Math.min(прошлоШага / 60, ТИПОВЫЕ_МИНУТЫ[с.шаг - 1] || 0);
+    const проц = сдан ? 100 : Math.min(99, Math.round((доТекущего + вТекущем) / всегоМин * 100));
+    $("процент").innerHTML = проц + "<small>%</small>";
+    $("полоса").style.width = проц + "%";
+    $("полоса").classList.toggle("done", сдан);
+    $("полосаИмя").textContent = сдан ? "Сборка завершена" : "Готовность";
+    $("полосаПод").textContent = сдан
+      ? "все " + ШАГИ.length + " шагов пройдены"
+        + (долгN ? " · осталось закрыть: " + долгN : "")
+      : "шаг " + с.шаг + " из " + ШАГИ.length + " · " + с.шагНазвание;
+
+    const осталосьМин = всегоМин - (доТекущего + вТекущем);
+    $("осталось").textContent = сдан ? "готов"
+      : остыло ? "—"
+      : осталосьМин > 0.5 ? "~" + мин(осталосьМин) : "почти готово";
+    $("подОсталось").textContent = сдан ? "агент собран и проверен"
+      : остыло ? "сборка остановлена — скажи агенту «продолжи сборку»"
+      : "по типовым срокам";
+
+    лестница(прошлоШага);
+    бейджи(остыло);
+
+    if (заморожено) clearInterval(таймер);   // сданное и остывшее не тикает
+  }
+  const таймер = setInterval(тик, 1000);
+  тик();
+})();
+</script>
+</body>
+</html>
