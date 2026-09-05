@@ -28,8 +28,11 @@
 ```powershell
 git clone https://github.com/katringug-png/agent-workspace.git "Агенты"
 cd "Агенты"
-./install.ps1
+powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
+
+*Windows по умолчанию не разрешает запускать скачанные скрипты — `-ExecutionPolicy Bypass`
+разрешает этот один запуск и ничего не меняет в настройках компьютера.*
 
 **macOS / Linux:**
 

@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
     Разворачивает окружение агентов.
 
@@ -10,8 +10,13 @@
     Ничего не удаляет и ничего не отправляет наружу.
 
     Запуск:   ./install.ps1
-    Молча:    ./install.ps1 -Global        (сразу ставить глобально, без вопроса)
-              ./install.ps1 -NoGlobal      (только папки, глобально не ставить)
+              ./install.ps1 -Global      сразу ставить глобально, без вопроса
+              ./install.ps1 -NoGlobal    только папки
+
+    Два правила про этот файл, оба оплачены поломкой:
+      * имена переменных — латиницей;
+      * файл сохранён в UTF-8 С BOM. Windows PowerShell 5.1 без BOM читает его
+        как ANSI, и весь русский текст превращается в кашу ещё до запуска.
 #>
 param(
     [switch]$Global,
@@ -19,69 +24,70 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$OutputEncoding = [System.Text.Encoding]::UTF8
 Set-Location -Path $PSScriptRoot
 
-function Скажи($текст, $цвет = 'Gray') { Write-Host $текст -ForegroundColor $цвет }
+function Say($text, $color = 'Gray') { Write-Host $text -ForegroundColor $color }
 
-Скажи ''
-Скажи '  Окружение агентов — установка' 'Cyan'
-Скажи ''
+Say ''
+Say '  Окружение агентов — установка' 'Cyan'
+Say ''
 
 # ── 1. Рабочие папки ─────────────────────────────────────────────────────────
-$папки = 'проекты', 'входящие', 'результаты', 'корзина', 'окружение'
-foreach ($п in $папки) {
-    if (Test-Path -LiteralPath $п) {
-        Скажи "  папка уже есть:  $п"
+$folders = 'проекты', 'входящие', 'результаты', 'корзина', 'окружение'
+foreach ($folder in $folders) {
+    if (Test-Path -LiteralPath $folder) {
+        Say "  папка уже есть:  $folder"
     } else {
-        New-Item -ItemType Directory -Path $п | Out-Null
-        Скажи "  создал папку:    $п" 'Green'
+        New-Item -ItemType Directory -Path $folder | Out-Null
+        Say "  создал папку:    $folder" 'Green'
     }
 }
 
 # ── 2. Навык глобально ───────────────────────────────────────────────────────
-$ставить = $false
-if ($Global)        { $ставить = $true }
-elseif ($NoGlobal)  { $ставить = $false }
+if     ($Global)   { $installGlobal = $true }
+elseif ($NoGlobal) { $installGlobal = $false }
 else {
-    Скажи ''
-    Скажи '  Поставить «Сборщика агентов» глобально?' 'Yellow'
-    Скажи '  Тогда его можно звать из любой папки, а не только из этой.'
-    $ответ = Read-Host '  Ставить? (д/н)'
-    $ставить = $ответ -match '^(д|да|y|yes)$'
+    Say ''
+    Say '  Поставить «Сборщика агентов» глобально?' 'Yellow'
+    Say '  Тогда его можно звать из любой папки, а не только из этой.'
+    $answer = Read-Host '  Ставить? (д/н)'
+    $installGlobal = $answer -match '^(д|да|y|yes)$'
 }
 
-if ($ставить) {
-    $пары = @(
-        @{ Откуда = '.claude/skills/sborshchik'; Куда = (Join-Path $HOME '.claude/skills/sborshchik'); Имя = 'Claude Code' },
-        @{ Откуда = '.codex/skills/sborshchik';  Куда = (Join-Path $HOME '.codex/skills/sborshchik');  Имя = 'Codex' }
+if ($installGlobal) {
+    # USERPROFILE, а не $HOME: на Windows это та же папка, но $HOME доступен
+    # только для чтения — с ним установку нельзя ни проверить, ни перенаправить.
+    $homeDir = if ($env:USERPROFILE) { $env:USERPROFILE } else { $HOME }
+    $targets = @(
+        @{ From = '.claude/skills/sborshchik'; To = (Join-Path $homeDir '.claude/skills/sborshchik'); Tool = 'Claude Code' },
+        @{ From = '.codex/skills/sborshchik';  To = (Join-Path $homeDir '.codex/skills/sborshchik');  Tool = 'Codex' }
     )
-    foreach ($пара in $пары) {
-        if (-not (Test-Path -LiteralPath $пара.Откуда)) { continue }
-        $родитель = Split-Path -Parent $пара.Куда
-        if (-not (Test-Path -LiteralPath $родитель)) { New-Item -ItemType Directory -Path $родитель -Force | Out-Null }
+    foreach ($t in $targets) {
+        if (-not (Test-Path -LiteralPath $t.From)) { continue }
+        $parent = Split-Path -Parent $t.To
+        if (-not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
 
-        if (Test-Path -LiteralPath $пара.Куда) {
+        if (Test-Path -LiteralPath $t.To) {
             # не затираем молча: старую копию отодвигаем с датой в имени
-            $запас = "$($пара.Куда).старый-$(Get-Date -Format 'yyyy-MM-dd-HHmm')"
-            Move-Item -LiteralPath $пара.Куда -Destination $запас
-            Скажи "  прежний навык отложен: $запас" 'DarkYellow'
+            $backup = "$($t.To).старый-$(Get-Date -Format 'yyyy-MM-dd-HHmm')"
+            Move-Item -LiteralPath $t.To -Destination $backup
+            Say "  прежний навык отложен: $backup" 'DarkYellow'
         }
-        Copy-Item -LiteralPath $пара.Откуда -Destination $пара.Куда -Recurse
-        Скажи "  навык поставлен для $($пара.Имя): $($пара.Куда)" 'Green'
+        Copy-Item -LiteralPath $t.From -Destination $t.To -Recurse
+        Say "  навык поставлен для $($t.Tool): $($t.To)" 'Green'
     }
 } else {
-    Скажи '  Глобально не ставлю — навык работает, когда запускаешь агента из этой папки.'
+    Say '  Глобально не ставлю — навык работает, когда запускаешь агента из этой папки.'
 }
 
 # ── 3. Что дальше ────────────────────────────────────────────────────────────
-Скажи ''
-Скажи '  Готово.' 'Green'
-Скажи ''
-Скажи '  Дальше:'
-Скажи '    1. Запусти в этой папке:  claude'
-Скажи '    2. Скажи своими словами:  собери мне агента, который …'
-Скажи '       (или вызови навык явно: /sborshchik)'
-Скажи ''
-Скажи '  Общий дашборд — файл Дашборд.html, открывается двойным кликом.'
-Скажи ''
+Say ''
+Say '  Готово.' 'Green'
+Say ''
+Say '  Дальше:'
+Say '    1. Запусти в этой папке:  claude'
+Say '    2. Скажи своими словами:  собери мне агента, который …'
+Say '       (или вызови навык явно: /sborshchik)'
+Say ''
+Say '  Общий дашборд — файл Дашборд.html, открывается двойным кликом.'
+Say ''
