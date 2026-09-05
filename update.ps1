@@ -22,7 +22,6 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-Set-Location -Path $PSScriptRoot
 
 function Say($text, $color = 'Gray') { Write-Host $text -ForegroundColor $color }
 
@@ -30,12 +29,27 @@ Say ''
 Say '  Обновление окружения агентов' 'Cyan'
 Say ''
 
-# ── 0. Убеждаемся, что мы в окружении, а не в случайной папке ────────────────
-if (-not (Test-Path -LiteralPath 'CLAUDE.md') -or -not (Test-Path -LiteralPath '.claude/skills/sborshchik')) {
+# ── 0. Находим папку окружения ───────────────────────────────────────────────
+# Сначала та, откуда запустили, и только потом та, где лежит сам скрипт.
+# Порядок важен: первое обновление делается скачанным во временную папку
+# скриптом, и «папка скрипта» — это temp, где обновлять нечего.
+function ЭтоОкружение($path) {
+    if (-not $path) { return $false }
+    return (Test-Path -LiteralPath (Join-Path $path 'CLAUDE.md')) -and
+           (Test-Path -LiteralPath (Join-Path $path '.claude/skills/sborshchik'))
+}
+
+$корень = $null
+foreach ($кандидат in @((Get-Location).Path, $PSScriptRoot)) {
+    if (ЭтоОкружение $кандидат) { $корень = $кандидат; break }
+}
+if (-not $корень) {
     Say '  Это не папка окружения агентов.' 'Red'
-    Say '  Запусти скрипт внутри папки «Агенты» — там, где лежит CLAUDE.md.'
+    Say '  Открой папку «Агенты» — ту, где лежит CLAUDE.md, — и запусти оттуда.'
     exit 1
 }
+Set-Location -Path $корень
+Say "  папка окружения: $корень"
 
 # ── 1. Качаем свежую версию во временную папку ───────────────────────────────
 $tmp = Join-Path $env:TEMP ('agent-workspace-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
