@@ -96,9 +96,17 @@ if ((Test-Path -LiteralPath 'Дашборд.html') -and (Test-Path -LiteralPath 
         $new = [regex]::Replace($new, $re, { param($m) $значение }, 1)
         $перенесено += $имя
     }
-    Set-Content -LiteralPath 'Дашборд.html' -Value $new -Encoding UTF8 -NoNewline
-    if ($перенесено.Count) { Say ("  дашборд обновлён, данные сохранены: " + ($перенесено -join ', ')) 'Green' }
-    else { Say '  дашборд обновлён (данных для переноса не нашлось)' 'Green' }
+    # Защита от молчаливой потери: в старом дашборде данные есть, а перенести
+    # не удалось — значит НЕ трогаем его. Обновить оформление можно и потом,
+    # а восстановить чужой журнал уже нельзя.
+    if ($перенесено.Count -eq 0 -and $old -match 'const АГЕНТЫ = \[') {
+        Say '  дашборд НЕ обновлён: не удалось перенести твои данные, твой файл оставлен как есть' 'Yellow'
+        Say '  скажи об этом — новое оформление поставим отдельно, ничего не потеряв'
+    } else {
+        Set-Content -LiteralPath 'Дашборд.html' -Value $new -Encoding UTF8 -NoNewline
+        if ($перенесено.Count) { Say ("  дашборд обновлён, данные сохранены: " + ($перенесено -join ', ')) 'Green' }
+        else { Say '  дашборд обновлён (данных для переноса не нашлось)' 'Green' }
+    }
 } elseif (Test-Path -LiteralPath $freshDash) {
     Copy-Item -LiteralPath $freshDash -Destination 'Дашборд.html'
     Say '  дашборд поставлен' 'Green'

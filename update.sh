@@ -76,12 +76,15 @@ put_aside() {
 # Массива может не быть (у старых версий не было ЗАДАЧИ) — тогда остаётся пустой.
 if [ -f "Дашборд.html" ] && [ -f "$fresh/Дашборд.html" ]; then
   put_aside "Дашборд.html"
-  if perl -e '
+  # Файлы читаются в сырых байтах, БЕЗ :encoding(UTF-8). Иначе русские названия
+  # массивов в тексте программы (байты) и в прочитанном файле (символы) — разные
+  # вещи, ничего не совпадает, и дашборд молча уезжает пустым.
+  moved="$(perl -e '
       use strict; use warnings;
       my ($old_f, $new_f) = @ARGV;
       local $/;
-      open my $o, "<:encoding(UTF-8)", $old_f or die; my $old = <$o>; close $o;
-      open my $n, "<:encoding(UTF-8)", $new_f or die; my $new = <$n>; close $n;
+      open my $o, "<:raw", $old_f or die; my $old = <$o>; close $o;
+      open my $n, "<:raw", $new_f or die; my $new = <$n>; close $n;
       my @moved;
       for my $name ("АГЕНТЫ", "ЗАДАЧИ", "ЖУРНАЛ") {
         my $re = qr/const \Q$name\E = \[.*?\n\];/s;
@@ -92,15 +95,20 @@ if [ -f "Дашборд.html" ] && [ -f "$fresh/Дашборд.html" ]; then
         $new =~ s/$re/$block/s;
         push @moved, $name;
       }
-      open my $w, ">:encoding(UTF-8)", $new_f or die; print $w $new; close $w;
-      print join(", ", @moved), "\n";
-    ' "Дашборд.html" "$fresh/Дашборд.html" > "$tmp/moved.txt" 2>/dev/null; then
-    cp "$fresh/Дашборд.html" "Дашборд.html"
-    moved="$(cat "$tmp/moved.txt")"
-    if [ -n "${moved// /}" ]; then ok "  дашборд обновлён, данные сохранены: $moved"
-    else ok '  дашборд обновлён (данных для переноса не нашлось)'; fi
+      open my $w, ">:raw", $new_f or die; print $w $new; close $w;
+      print join(", ", @moved);
+    ' "Дашборд.html" "$fresh/Дашборд.html" 2>/dev/null)" || moved=""
+
+  # Защита от молчаливой потери: в старом дашборде данные есть, а перенести
+  # не удалось — значит НЕ трогаем его. Обновить оформление можно и потом,
+  # а восстановить чужой журнал уже нельзя.
+  if [ -z "$moved" ] && grep -q "const АГЕНТЫ = \[" "Дашборд.html"; then
+    warn '  дашборд НЕ обновлён: не удалось перенести твои данные, твой файл оставлен как есть'
+    say  '  скажи об этом — новое оформление поставим отдельно, ничего не потеряв'
   else
-    warn '  дашборд перенести не вышло — твой оставлен как есть, новый лежит в корзине'
+    cp "$fresh/Дашборд.html" "Дашборд.html"
+    if [ -n "$moved" ]; then ok "  дашборд обновлён, данные сохранены: $moved"
+    else ok '  дашборд обновлён (данных для переноса не нашлось)'; fi
   fi
 elif [ -f "$fresh/Дашборд.html" ]; then
   cp "$fresh/Дашборд.html" "Дашборд.html"
